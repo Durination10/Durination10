@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>측량기능사 실기 - 토털스테이션측량 자동 계산기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .exam-title {
+            font-family: 'Noto Serif KR', serif;
+            letter-spacing: 0.25em;
+        }
+        /* 실제 시험지 표 스타일 재현 */
+        .exam-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 2px solid #111827;
+            background-color: #ffffff;
+            font-size: 0.9rem;
+        }
+        .exam-table th, .exam-table td {
+            border: 1px solid #374151;
+            padding: 6px 8px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .exam-table th {
+            background-color: #f9fafb;
+            font-weight: 600;
+        }
+        /* 지정값 굵은 선 박스 */
+        .bold-box {
+            border: 2.5px solid #000000 !important;
+            font-weight: 700;
+            background-color: #fffbeb;
+        }
+        /* 대각선 빗금 셀 (수험자 기재 불필요 영역) */
+        .diagonal-cell {
+            background: linear-gradient(to top right, transparent calc(50% - 1px), #6b7280, transparent calc(50% + 1px));
+            background-color: #f3f4f6;
+        }
+        /* 윗줄 표시 (측선 AB, BC, CQ) */
+        .overline-text {
+            text-decoration: overline;
+            font-weight: 600;
+        }
+        /* 입력 필드 스타일 */
+        .dms-input {
+            width: 3.2rem;
+            text-align: right;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 2px 4px;
+            font-weight: 600;
+            color: #1d4ed8;
+            background-color: #eff6ff;
+        }
+        .dms-input:focus, .num-input:focus {
+            outline: 2px solid #2563eb;
+            background-color: #ffffff;
+        }
+        .num-input {
+            width: 5.8rem;
+            text-align: right;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-weight: 600;
+            color: #1d4ed8;
+            background-color: #eff6ff;
+        }
+        .calc-output {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: 700;
+            color: #047857;
+            font-size: 0.95rem;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background-color: #ffffff;
+            }
+            .exam-paper {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+            }
+        }
+    </style>
+</head>
+<body class="py-6 px-3 sm:px-6 lg:px-8 text-gray-900">
+
+<div class="max-w-6xl mx-auto">
+    <!-- 상단 컨트롤 패널 (인쇄 시 숨김) -->
+    <div class="no-print bg-white rounded-xl shadow-md p-4 mb-6 border border-gray-200">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <span>📐</span> 측량기능사 실기 [토털스테이션측량] 계산 프로그램
+                </h1>
+                <p class="text-sm text-gray-600 mt-1">
+                    파란색 입력칸에 <strong>관측값(교각, 거리, AP 길이)</strong>을 입력하면 모든 답안지 항목이 소수점 규정에 맞춰 자동 계산됩니다.
+                </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="loadSampleData()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition">
+                    예제 데이터 입력
+                </button>
+                <button onclick="resetInputs()" class="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg shadow-sm transition">
+                    초기화
+                </button>
+                <button onclick="toggleBlindMode()" id="blindBtn" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg shadow-sm transition">
+                    🙈 계산결과 가리기 (연습모드)
+                </button>
+                <button onclick="window.print()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg shadow-sm transition">
+                    🖨️ 답안지 인쇄
+                </button>
+            </div>
+        </div>
+
+        <!-- 계산 기준 설정 바 -->
+        <div class="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-4 text-sm">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-gray-700">A점(첫 측점) 방위각 기준:</span>
+                <select id="stationARule" onchange="calculateAll()" class="border border-indigo-300 rounded-md px-2 py-1 text-indigo-900 font-semibold bg-indigo-50">
+                    <option value="direct">AP 방위각 + A교각 (A에서 P 후시 기준 - ±180° 안 함)</option>
+                    <option value="plus180">AP 방위각 + A교각 ± 180° (PA 진행 기준)</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-gray-700">B·C점 방위각 공식:</span>
+                <select id="azimuthRule" onchange="calculateAll()" class="border border-gray-300 rounded-md px-2 py-1 text-gray-800 font-medium bg-gray-50">
+                    <option value="plus180">우각: 전측선 방위각 + 교각 ± 180° (표준)</option>
+                    <option value="minus">좌각: 전측선 방위각 - 교각 ± 180°</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-gray-700">위거·경거 합산:</span>
+                <select id="roundingMode" onchange="calculateAll()" class="border border-gray-300 rounded-md px-2 py-1 text-gray-800 font-medium bg-gray-50">
+                    <option value="rounded">표기된 소수 3자리 값으로 합산 (권장)</option>
+                    <option value="exact">원시 정밀값 합산 후 반올림</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 레이아웃: 좌측 답안지 / 우측 시각화 및 공식 해설 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- 답안지 영역 (8 칼럼) -->
+        <div class="lg:col-span-8 exam-paper bg-white p-6 sm:p-8 rounded-xl shadow-lg border border-gray-300">
+            
+            <!-- 답안지 헤더 -->
+            <h2 class="text-2xl sm:text-3xl font-bold text-center exam-title mb-4">
+                국가기술자격 실기시험 답안지
+            </h2>
+
+            <table class="exam-table mb-4">
+                <tbody>
+                    <tr>
+                        <th class="w-1/6">자격종목</th>
+                        <td class="w-2/6 font-medium">측량기능사</td>
+                        <th class="w-1/6">비번호</th>
+                        <td class="w-1/6">
+                            <input type="text" placeholder="입력" class="w-full text-center border-none focus:ring-0 text-sm">
+                        </td>
+                        <th class="w-1/6">감독확인</th>
+                        <td class="w-1/6"></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- 주의사항 안내문 -->
+            <div class="text-xs sm:text-sm text-gray-800 mb-3 leading-relaxed">
+                <p>※ 수험자 인적사항 및 답안작성은 반드시 검은색 필기구만 사용하여야 하며 그 외 연필류, 유색 필기구, 지워지는 펜 등을 사용한 답안은 채점하지 않으며 0점 처리됩니다.</p>
+            </div>
+
+            <!-- 본문 외곽 프레임 -->
+            <div class="border-2 border-gray-900 flex">
+                <!-- 좌측 메인 계산 표 영역 -->
+                <div class="flex-grow border-r border-gray-800">
+                    <!-- 타이틀 & 초기 조건 -->
+                    <div class="p-3 border-b border-gray-800">
+                        <div class="text-center mb-2">
+                            <span class="text-lg font-bold border-b-2 border-gray-900 pb-0.5 px-3 tracking-widest">토털스테이션측량</span>
+                        </div>
+                        <p class="text-xs text-gray-800 mb-2">※ 거리는 소수3자리까지, 각은 초단위까지 기입하시오.</p>
+                        
+                        <div class="flex flex-wrap justify-between items-center gap-2 text-sm">
+                            <div class="flex items-center gap-1 font-semibold">
+                                <span>AP의 방위각 = </span>
+                                <input type="number" id="ap_deg" value="125" oninput="calculateAll()" class="dms-input">°
+                                <input type="number" id="ap_min" value="45" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">'
+                                <input type="number" id="ap_sec" value="30" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">"
+                            </div>
+                            <div class="border border-gray-700 px-3 py-1 text-xs font-medium bg-gray-50">
+                                코스 번호 : <input type="text" class="w-16 border-b border-gray-400 text-center bg-transparent focus:outline-none" placeholder="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 1. 교각 및 방위각 표 -->
+                    <table class="exam-table !border-0 !border-b !border-gray-800">
+                        <thead>
+                            <tr>
+                                <th class="w-[10%]">측점</th>
+                                <th class="w-[32%]">교각</th>
+                                <th class="w-[10%]">측선</th>
+                                <th class="w-[26%]">방위각</th>
+                                <th class="w-[12%] text-xs">*<br>방위각오차</th>
+                                <th class="w-[10%] text-xs">*<br>득점</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- A점 / AB측선 -->
+                            <tr>
+                                <td class="font-semibold">A</td>
+                                <td>
+                                    <div class="flex items-center justify-center gap-0.5">
+                                        <input type="number" id="angA_d" value="44" oninput="calculateAll()" class="dms-input">°
+                                        <input type="number" id="angA_m" value="14" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">'
+                                        <input type="number" id="angA_s" value="30" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">"
+                                    </div>
+                                </td>
+                                <td><span class="overline-text">AB</span></td>
+                                <td id="az_AB" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                            <!-- B점 / BC측선 -->
+                            <tr>
+                                <td class="font-semibold">B</td>
+                                <td>
+                                    <div class="flex items-center justify-center gap-0.5">
+                                        <input type="number" id="angB_d" value="245" oninput="calculateAll()" class="dms-input">°
+                                        <input type="number" id="angB_m" value="15" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">'
+                                        <input type="number" id="angB_s" value="20" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">"
+                                    </div>
+                                </td>
+                                <td><span class="overline-text">BC</span></td>
+                                <td id="az_BC" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                            <!-- C점 / CQ측선 -->
+                            <tr>
+                                <td class="font-semibold">C</td>
+                                <td>
+                                    <div class="flex items-center justify-center gap-0.5">
+                                        <input type="number" id="angC_d" value="132" oninput="calculateAll()" class="dms-input">°
+                                        <input type="number" id="angC_m" value="30" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">'
+                                        <input type="number" id="angC_s" value="40" min="0" max="59" oninput="calculateAll()" class="dms-input !w-11">"
+                                    </div>
+                                </td>
+                                <td><span class="overline-text">CQ</span></td>
+                                <td id="az_CQ" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- 2. 거리, 위거, 경거, 합위거, 합경거 표 -->
+                    <table class="exam-table !border-0 !border-b !border-gray-800">
+                        <thead>
+                            <tr>
+                                <th class="w-[7%]">측선</th>
+                                <th class="w-[14%]">거리</th>
+                                <th class="w-[14%]">위거</th>
+                                <th class="w-[14%]">경거</th>
+                                <th class="w-[7%]">측점</th>
+                                <th class="w-[13%]">합위거</th>
+                                <th class="w-[13%]">합경거</th>
+                                <th class="w-[6%] text-[11px] leading-tight">*<br>합위거<br>오차</th>
+                                <th class="w-[6%] text-[11px] leading-tight">*<br>합경거<br>오차</th>
+                                <th class="w-[6%] text-[11px] leading-tight">*<br>득점</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- AB 행 / 측점 A -->
+                            <tr>
+                                <td><span class="overline-text">AB</span></td>
+                                <td class="bold-box">
+                                    <input type="number" id="dist_AB" value="20.000" step="0.001" oninput="calculateAll()" class="num-input !bg-transparent !border-none !text-black !font-bold text-center">
+                                </td>
+                                <td id="lat_AB" class="calc-output result-field"></td>
+                                <td id="dep_AB" class="calc-output result-field"></td>
+                                <td class="font-semibold">A</td>
+                                <td>
+                                    <input type="number" id="init_X" value="200.000" step="0.001" oninput="calculateAll()" class="num-input !w-20 !bg-transparent !border-none !text-gray-900 text-center">
+                                </td>
+                                <td>
+                                    <input type="number" id="init_Y" value="300.000" step="0.001" oninput="calculateAll()" class="num-input !w-20 !bg-transparent !border-none !text-gray-900 text-center">
+                                </td>
+                                <td class="diagonal-cell"></td>
+                                <td class="diagonal-cell"></td>
+                                <td class="diagonal-cell"></td>
+                            </tr>
+                            <!-- BC 행 / 측점 B -->
+                            <tr>
+                                <td><span class="overline-text">BC</span></td>
+                                <td class="bold-box">
+                                    <input type="number" id="dist_BC" value="20.000" step="0.001" oninput="calculateAll()" class="num-input !bg-transparent !border-none !text-black !font-bold text-center">
+                                </td>
+                                <td id="lat_BC" class="calc-output result-field"></td>
+                                <td id="dep_BC" class="calc-output result-field"></td>
+                                <td class="font-semibold">B</td>
+                                <td id="cumLat_B" class="calc-output result-field"></td>
+                                <td id="cumDep_B" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                            <!-- CQ 행 / 측점 C -->
+                            <tr>
+                                <td><span class="overline-text">CQ</span></td>
+                                <td>
+                                    <input type="number" id="dist_CQ" value="25.430" step="0.001" oninput="calculateAll()" class="num-input">
+                                </td>
+                                <td id="lat_CQ" class="calc-output result-field"></td>
+                                <td id="dep_CQ" class="calc-output result-field"></td>
+                                <td class="font-semibold">C</td>
+                                <td id="cumLat_C" class="calc-output result-field"></td>
+                                <td id="cumDep_C" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                            <!-- 계 행 / 측점 Q -->
+                            <tr>
+                                <td class="font-semibold">계</td>
+                                <td id="dist_sum" class="calc-output result-field"></td>
+                                <td id="lat_sum" class="calc-output result-field"></td>
+                                <td id="dep_sum" class="calc-output result-field"></td>
+                                <td class="font-semibold">Q</td>
+                                <td id="cumLat_Q" class="calc-output result-field"></td>
+                                <td id="cumDep_Q" class="calc-output result-field"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- 3. P, Q의 좌표 표 -->
+                    <table class="exam-table !border-0 !border-b !border-gray-800">
+                        <thead>
+                            <tr>
+                                <th class="w-[22%]">구분</th>
+                                <th class="w-[54%]">좌표</th>
+                                <th class="w-[8%] text-xs">*<br>X오차</th>
+                                <th class="w-[8%] text-xs">*<br>Y오차</th>
+                                <th class="w-[8%] text-xs">*<br>득점</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-semibold">P의 좌표(X, Y)</td>
+                                <td>
+                                    <div class="flex justify-between items-center px-4">
+                                        <span>(</span>
+                                        <input type="number" id="coord_PX" value="181.773" step="0.001" oninput="calculateAll()" class="num-input text-center">
+                                        <span>,</span>
+                                        <input type="number" id="coord_PY" value="308.211" step="0.001" oninput="calculateAll()" class="num-input text-center">
+                                        <span>)</span>
+                                    </div>
+                                </td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                                <td class="bg-gray-50"></td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold">Q의 좌표(X, Y)</td>
+                                <td>
+                                    <div class="flex justify-between items-center px-4">
+                                        <span>(</span>
+                                        <span id="coord_QX" class="calc-output result-field"></span>
+                                        <span>,</span>
+                                        <span id="coord_QY" class="calc-output result-field"></span>
+                                        <span>)</span>
+                                    </div>
+                                </td>
+                                <td colspan="3" class="diagonal-cell"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <!-- 4. PQ의 거리 및 계산과정 -->
+                    <div class="grid grid-cols-12">
+                        <div class="col-span-9 p-3 border-r border-gray-800 flex flex-col justify-between min-h-[160px]">
+                            <div>
+                                <p class="text-sm font-semibold mb-2">PQ의 거리(m) (단, 계산과정과 답을 모두 기입하시오.)</p>
+                                <p class="text-sm font-medium mb-1">○ 계산과정 :</p>
+                                <div id="pq_process" class="pl-4 py-2 text-sm calc-output result-field whitespace-pre-line leading-relaxed"></div>
+                            </div>
+                            <div class="mt-2 flex items-center gap-2">
+                                <span class="text-sm font-medium">○ 답 :</span>
+                                <span id="pq_answer" class="calc-output result-field text-base underline decoration-2"></span>
+                            </div>
+                        </div>
+                        <div class="col-span-3 grid grid-cols-2">
+                            <div class="border-r border-b border-gray-800 bg-gray-50 text-center text-xs py-1 font-semibold">*<br>오차</div>
+                            <div class="border-b border-gray-800 bg-gray-50 text-center text-xs py-1 font-semibold">*<br>득점</div>
+                            <div class="border-r border-gray-800 bg-gray-50 h-full"></div>
+                            <div class="bg-gray-50 h-full"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 우측 채점란 사이드 컬럼 -->
+                <div class="w-16 sm:w-20 flex-shrink-0 flex flex-col bg-gray-50">
+                    <div class="border-b border-gray-800 py-2 text-center text-xs font-bold">채점란</div>
+                    <div class="border-b border-gray-800 py-1.5 text-center text-xs font-semibold mt-12 border-t">득점</div>
+                    <div class="border-b border-gray-800 h-20 bg-white"></div>
+                    <div class="flex-grow"></div>
+                </div>
+            </div>
+
+            <!-- 하단 주석 -->
+            <div class="mt-2 text-xs sm:text-sm font-medium text-gray-800">
+                ※ 표 중 굵은 선 박스는 지정 값을 사용하고, * 표시란은 수험자가 기재하지 않습니다.
+            </div>
+            <div class="mt-4 text-center font-bold text-sm text-gray-700 tracking-wider">
+                HRDK 답안지 3 - 1
+            </div>
+        </div>
+
+        <!-- 우측 보조 패널: 트래버스 시각화 & 단계별 계산 해설 (4 칼럼) -->
+        <div class="lg:col-span-4 space-y-6 no-print">
+            <!-- 측점 및 측선 배정도 (Canvas) -->
+            <div class="bg-white rounded-xl shadow-md p-4 border border-gray-200">
+                <h3 class="text-base font-bold text-gray-900 mb-2 flex items-center justify-between">
+                    <span>🧭 측점·측선 좌표 배정도</span>
+                    <span class="text-xs font-normal text-gray-500">북쪽(X축) 상단 기준</span>
+                </h3>
+                <div class="w-full aspect-square bg-slate-900 rounded-lg overflow-hidden relative border border-slate-700">
+                    <canvas id="traverseCanvas" class="w-full h-full block"></canvas>
+                </div>
+                <div class="mt-2 grid grid-cols-2 gap-1 text-xs text-gray-600">
+                    <div>🟢 <strong>A점:</strong> 출발 기지점</div>
+                    <div>🟡 <strong>P점:</strong> 기지 방위각점</div>
+                    <div>🔵 <strong>B, C점:</strong> 중간 측점</div>
+                    <div>🔴 <strong>Q점:</strong> 종점 (PQ 연결)</div>
+                </div>
+            </div>
+
+            <!-- 상세 계산 수식 해설 -->
+            <div class="bg-white rounded-xl shadow-md p-4 border border-gray-200">
+                <h3 class="text-base font-bold text-gray-900 mb-3">📝 항목별 적용 공식 및 실시간 검산</h3>
+                <div class="space-y-3 text-xs leading-relaxed text-gray-700">
+                    <div class="p-2.5 bg-indigo-50 rounded-lg border border-indigo-200">
+                        <div class="font-bold text-indigo-950 mb-1">1. 방위각 계산 과정 (<span id="ruleSummaryText">우각 기준</span>)</div>
+                        <div id="azimuthDetailBox" class="text-indigo-900 font-mono text-[11px] space-y-1"></div>
+                        <p class="text-[11px] text-indigo-700 mt-1.5">* A점은 이미 <strong>AP 방위각(A→P 방향)</strong>이 주어졌으므로 역방위각(±180°) 변환 없이 교각을 바로 더하고, B·C점은 전측선을 역방향으로 시준하므로 ±180°를 적용합니다.</p>
+                    </div>
+
+                    <div class="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                        <div class="font-bold text-gray-900 mb-1">2. 위거(ΔX) 및 경거(ΔY)</div>
+                        <p>• 위거(ΔX) = 거리(L) × cos(방위각)</p>
+                        <p>• 경거(ΔY) = 거리(L) × sin(방위각)</p>
+                    </div>
+
+                    <div class="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                        <div class="font-bold text-gray-900 mb-1">3. P점과 Q점의 좌표 및 거리</div>
+                        <p>• P<sub>X</sub>, P<sub>Y</sub> : 관측 또는 주어진 P점 좌표 직접 입력</p>
+                        <p>• Q<sub>X</sub> = 측점 Q의 합위거, Q<sub>Y</sub> = 측점 Q의 합경거</p>
+                        <p>• PQ 거리 = √[(Q<sub>X</sub> - P<sub>X</sub>)² + (Q<sub>Y</sub> - P<sub>Y</sub>)²]</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    let isBlindMode = false;
+
+    // 도, 분, 초를 총 '초(seconds)' 단위로 변환
+    function dmsToSeconds(d, m, s) {
+        const deg = parseInt(d, 10) || 0;
+        const min = parseInt(m, 10) || 0;
+        const sec = parseInt(s, 10) || 0;
+        return deg * 3600 + min * 60 + sec;
+    }
+
+    // 총 '초(seconds)'를 0° ~ 360° 범위로 정규화
+    function normalizeSeconds(totalSec) {
+        const CIRCLE = 360 * 3600;
+        let norm = totalSec % CIRCLE;
+        if (norm < 0) norm += CIRCLE;
+        return norm;
+    }
+
+    // 총 '초'를 도, 분, 초 객체로 변환
+    function secondsToDMS(totalSec) {
+        const norm = normalizeSeconds(Math.round(totalSec));
+        const d = Math.floor(norm / 3600);
+        const rem = norm % 3600;
+        const m = Math.floor(rem / 60);
+        const s = rem % 60;
+        return { d, m, s };
+    }
+
+    // DMS 객체를 시험지 표기 문자열(예: 86° 05' 40")로 포맷팅
+    function formatDMS(dmsObj) {
+        const mStr = String(dmsObj.m).padStart(2, '0');
+        const sStr = String(dmsObj.s).padStart(2, '0');
+        return `${dmsObj.d}° ${mStr}' ${sStr}"`;
+    }
+
+    // 총 '초'를 라디안(Radian)으로 변환
+    function secondsToRad(totalSec) {
+        const degrees = totalSec / 3600.0;
+        return (degrees * Math.PI) / 180.0;
+    }
+
+    // A점(첫 측점) 방위각 계산: AP 방위각이 이미 A->P 방향이므로 ±180° 없이 바로 가감 (옵션 선택 가능)
+    function calcFirstAzimuthSec(apAzSec, angleASec, rule, stationARule) {
+        if (stationARule === 'plus180') {
+            return calcNextAzimuthSec(apAzSec, angleASec, rule);
+        }
+        let raw = rule === 'plus180' ? (apAzSec + angleASec) : (apAzSec - angleASec);
+        return normalizeSeconds(raw);
+    }
+
+    // B, C점 등 다음 측선의 방위각 계산 (전측선 방위각 + 교각 ± 180°)
+    function calcNextAzimuthSec(prevAzSec, angleSec, rule) {
+        const HALF_CIRCLE = 180 * 3600;
+        let raw = rule === 'plus180' ? (prevAzSec + angleSec) : (prevAzSec - angleSec);
+        
+        if (raw >= HALF_CIRCLE) {
+            raw -= HALF_CIRCLE;
+        } else {
+            raw += HALF_CIRCLE;
+        }
+        return normalizeSeconds(raw);
+    }
+
+    // 소수점 3자리 반올림 숫자 반환
+    function round3(val) {
+        return Math.round((val + Number.EPSILON) * 1000) / 1000;
+    }
+
+    // 소수점 3자리 고정 문자열 반환
+    function fmt3(val) {
+        return round3(val).toFixed(3);
+    }
+
+    function calculateAll() {
+        const stationARule = document.getElementById('stationARule').value;
+        const rule = document.getElementById('azimuthRule').value;
+        const roundingMode = document.getElementById('roundingMode').value;
+
+        document.getElementById('ruleSummaryText').textContent = 
+            rule === 'plus180' ? '우각 기준' : '좌각 기준';
+
+        // 1. 각 입력값 읽기
+        const apSec = dmsToSeconds(
+            document.getElementById('ap_deg').value,
+            document.getElementById('ap_min').value,
+            document.getElementById('ap_sec').value
+        );
+        const angASec = dmsToSeconds(
+            document.getElementById('angA_d').value,
+            document.getElementById('angA_m').value,
+            document.getElementById('angA_s').value
+        );
+        const angBSec = dmsToSeconds(
+            document.getElementById('angB_d').value,
+            document.getElementById('angB_m').value,
+            document.getElementById('angB_s').value
+        );
+        const angCSec = dmsToSeconds(
+            document.getElementById('angC_d').value,
+            document.getElementById('angC_m').value,
+            document.getElementById('angC_s').value
+        );
+
+        // 2. 방위각 계산
+        const azABSec = calcFirstAzimuthSec(apSec, angASec, rule, stationARule);
+        const azBCSec = calcNextAzimuthSec(azABSec, angBSec, rule);
+        const azCQSec = calcNextAzimuthSec(azBCSec, angCSec, rule);
+
+        const strAP = formatDMS(secondsToDMS(apSec));
+        const strAngA = formatDMS(secondsToDMS(angASec));
+        const strAngB = formatDMS(secondsToDMS(angBSec));
+        const strAngC = formatDMS(secondsToDMS(angCSec));
+
+        const strAzAB = formatDMS(secondsToDMS(azABSec));
+        const strAzBC = formatDMS(secondsToDMS(azBCSec));
+        const strAzCQ = formatDMS(secondsToDMS(azCQSec));
+
+        document.getElementById('az_AB').textContent = strAzAB;
+        document.getElementById('az_BC').textContent = strAzBC;
+        document.getElementById('az_CQ').textContent = strAzCQ;
+
+        // 우측 방위각 실시간 검산 해설 업데이트
+        const signStr = rule === 'plus180' ? '+' : '-';
+        const aExtraStr = stationARule === 'direct' ? '(±180° 안 함)' : '± 180°';
+        document.getElementById('azimuthDetailBox').innerHTML = 
+            `<div>• <strong>AB 방위각:</strong> ${strAP} ${signStr} ${strAngA} ${aExtraStr}<br>  = <strong>${strAzAB}</strong></div>` +
+            `<div>• <strong>BC 방위각:</strong> ${strAzAB} ${signStr} ${strAngB} ± 180°<br>  = <strong>${strAzBC}</strong></div>` +
+            `<div>• <strong>CQ 방위각:</strong> ${strAzBC} ${signStr} ${strAngC} ± 180°<br>  = <strong>${strAzCQ}</strong></div>`;
+
+        // 3. 거리 및 기지점 좌표 입력값 읽기
+        const distAB = parseFloat(document.getElementById('dist_AB').value) || 0;
+        const distBC = parseFloat(document.getElementById('dist_BC').value) || 0;
+        const distCQ = parseFloat(document.getElementById('dist_CQ').value) || 0;
+
+        const initX = parseFloat(document.getElementById('init_X').value) || 0;
+        const initY = parseFloat(document.getElementById('init_Y').value) || 0;
+
+        // 4. 위거(Latitude, ΔX) 및 경거(Departure, ΔY) 계산
+        const rawLatAB = distAB * Math.cos(secondsToRad(azABSec));
+        const rawDepAB = distAB * Math.sin(secondsToRad(azABSec));
+
+        const rawLatBC = distBC * Math.cos(secondsToRad(azBCSec));
+        const rawDepBC = distBC * Math.sin(secondsToRad(azBCSec));
+
+        const rawLatCQ = distCQ * Math.cos(secondsToRad(azCQSec));
+        const rawDepCQ = distCQ * Math.sin(secondsToRad(azCQSec));
+
+        // 반올림 모드에 따른 적용 값 결정
+        const latAB = roundingMode === 'rounded' ? round3(rawLatAB) : rawLatAB;
+        const depAB = roundingMode === 'rounded' ? round3(rawDepAB) : rawDepAB;
+        const latBC = roundingMode === 'rounded' ? round3(rawLatBC) : rawLatBC;
+        const depBC = roundingMode === 'rounded' ? round3(rawDepBC) : rawDepBC;
+        const latCQ = roundingMode === 'rounded' ? round3(rawLatCQ) : rawLatCQ;
+        const depCQ = roundingMode === 'rounded' ? round3(rawDepCQ) : rawDepCQ;
+
+        document.getElementById('lat_AB').textContent = fmt3(latAB);
+        document.getElementById('dep_AB').textContent = fmt3(depAB);
+        document.getElementById('lat_BC').textContent = fmt3(latBC);
+        document.getElementById('dep_BC').textContent = fmt3(depBC);
+        document.getElementById('lat_CQ').textContent = fmt3(latCQ);
+        document.getElementById('dep_CQ').textContent = fmt3(depCQ);
+
+        // 합계 행 (거리 계, 위거 계, 경거 계)
+        const distSum = distAB + distBC + distCQ;
+        const latSum = latAB + latBC + latCQ;
+        const depSum = depAB + depBC + depCQ;
+
+        document.getElementById('dist_sum').textContent = fmt3(distSum);
+        document.getElementById('lat_sum').textContent = fmt3(latSum);
+        document.getElementById('dep_sum').textContent = fmt3(depSum);
+
+        // 5. 합위거 및 합경거 (B, C, Q점 좌표)
+        const bx = initX + latAB;
+        const by = initY + depAB;
+        const cx = bx + latBC;
+        const cy = by + depBC;
+        const qx = cx + latCQ;
+        const qy = cy + depCQ;
+
+        document.getElementById('cumLat_B').textContent = fmt3(bx);
+        document.getElementById('cumDep_B').textContent = fmt3(by);
+        document.getElementById('cumLat_C').textContent = fmt3(cx);
+        document.getElementById('cumDep_C').textContent = fmt3(cy);
+        document.getElementById('cumLat_Q').textContent = fmt3(qx);
+        document.getElementById('cumDep_Q').textContent = fmt3(qy);
+
+        // 6. P의 좌표(직접 입력값) 및 Q의 좌표 계산
+        const px = round3(parseFloat(document.getElementById('coord_PX').value) || 0);
+        const py = round3(parseFloat(document.getElementById('coord_PY').value) || 0);
+        const finalQX = round3(qx);
+        const finalQY = round3(qy);
+
+        document.getElementById('coord_QX').textContent = fmt3(finalQX);
+        document.getElementById('coord_QY').textContent = fmt3(finalQY);
+
+        // 7. PQ의 거리 및 계산과정 출력
+        const dxPQ = finalQX - px;
+        const dyPQ = finalQY - py;
+        const distPQ = Math.sqrt(dxPQ * dxPQ + dyPQ * dyPQ);
+
+        const processText = 
+            `L = √[ (X_Q - X_P)² + (Y_Q - Y_P)² ]\n` +
+            `  = √[ (${fmt3(finalQX)} - ${fmt3(px)})² + (${fmt3(finalQY)} - ${fmt3(py)})² ]\n` +
+            `  = √[ (${fmt3(dxPQ)})² + (${fmt3(dyPQ)})² ] = ${fmt3(distPQ)} m`;
+
+        document.getElementById('pq_process').textContent = processText;
+        document.getElementById('pq_answer').textContent = `${fmt3(distPQ)} m`;
+
+        // 8. 트래버스 도면 다시 그리기
+        drawTraverse({
+            A: { x: initX, y: initY },
+            P: { x: px, y: py },
+            B: { x: round3(bx), y: round3(by) },
+            C: { x: round3(cx), y: round3(cy) },
+            Q: { x: finalQX, y: finalQY }
+        });
+    }
+
+    function drawTraverse(pts) {
+        const canvas = document.getElementById('traverseCanvas');
+        if (!canvas) return;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width * window.devicePixelRatio;
+        canvas.height = rect.height * window.devicePixelRatio;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+        const w = rect.width;
+        const h = rect.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // 그리드 배경
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        const step = 30;
+        for (let x = 0; x < w; x += step) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        }
+        for (let y = 0; y < h; y += step) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        }
+
+        // 측량 좌표계: X가 북쪽(위쪽), Y가 동쪽(오른쪽)
+        const allPts = Object.values(pts);
+        const minY = Math.min(...allPts.map(p => p.y));
+        const maxY = Math.max(...allPts.map(p => p.y));
+        const minX = Math.min(...allPts.map(p => p.x));
+        const maxX = Math.max(...allPts.map(p => p.x));
+
+        const spanY = Math.max(maxY - minY, 10);
+        const spanX = Math.max(maxX - minX, 10);
+        const pad = 42;
+        const scale = Math.min((w - pad * 2) / spanY, (h - pad * 2) / spanX);
+
+        function toScreen(pt) {
+            const sx = w / 2 + (pt.y - (minY + maxY) / 2) * scale;
+            const sy = h / 2 - (pt.x - (minX + maxX) / 2) * scale;
+            return { x: sx, y: sy };
+        }
+
+        const sA = toScreen(pts.A);
+        const sP = toScreen(pts.P);
+        const sB = toScreen(pts.B);
+        const sC = toScreen(pts.C);
+        const sQ = toScreen(pts.Q);
+
+        // AP 기준선 (점선)
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#eab308';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sA.x, sA.y);
+        ctx.lineTo(sP.x, sP.y);
+        ctx.stroke();
+
+        // PQ 구하는 거리선 (점선)
+        ctx.strokeStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.moveTo(sP.x, sP.y);
+        ctx.lineTo(sQ.x, sQ.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // A -> B -> C -> Q 본 측선 (실선)
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(sA.x, sA.y);
+        ctx.lineTo(sB.x, sB.y);
+        ctx.lineTo(sC.x, sC.y);
+        ctx.lineTo(sQ.x, sQ.y);
+        ctx.stroke();
+
+        // 각 점 그리기 및 라벨 표시
+        const pointStyles = [
+            { key: 'A', pos: sA, color: '#22c55e' },
+            { key: 'P', pos: sP, color: '#eab308' },
+            { key: 'B', pos: sB, color: '#38bdf8' },
+            { key: 'C', pos: sC, color: '#38bdf8' },
+            { key: 'Q', pos: sQ, color: '#f43f5e' }
+        ];
+
+        pointStyles.forEach(item => {
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            ctx.arc(item.pos.x, item.pos.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText(item.key, item.pos.x + 8, item.pos.y - 6);
+        });
+
+        // 방위표 (N)
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('▲ N(X)', 12, 20);
+    }
+
+    // 연습모드 (계산 결과 가리기/보이기 토글)
+    function toggleBlindMode() {
+        isBlindMode = !isBlindMode;
+        const fields = document.querySelectorAll('.result-field');
+        const btn = document.getElementById('blindBtn');
+
+        fields.forEach(el => {
+            el.style.visibility = isBlindMode ? 'hidden' : 'visible';
+        });
+
+        if (isBlindMode) {
+            btn.textContent = '👀 계산결과 보기 (정답확인)';
+            btn.classList.replace('bg-amber-500', 'bg-blue-600');
+            btn.classList.replace('hover:bg-amber-600', 'hover:bg-blue-700');
+        } else {
+            btn.textContent = '🙈 계산결과 가리기 (연습모드)';
+            btn.classList.replace('bg-blue-600', 'bg-amber-500');
+            btn.classList.replace('hover:bg-blue-700', 'hover:bg-amber-600');
+        }
+    }
+
+    // 샘플 데이터 로드
+    function loadSampleData() {
+        document.getElementById('ap_deg').value = 125;
+        document.getElementById('ap_min').value = 15;
+        document.getElementById('ap_sec').value = 30;
+
+        // AP(125°15'30") + A교각(75°10'34") = 200°26'04" 가 되도록 직관적인 예제 세팅
+        document.getElementById('angA_d').value = 75;
+        document.getElementById('angA_m').value = 10;
+        document.getElementById('angA_s').value = 34;
+
+        document.getElementById('angB_d').value = 164;
+        document.getElementById('angB_m').value = 26;
+        document.getElementById('angB_s').value = 55;
+
+        document.getElementById('angC_d').value = 112;
+        document.getElementById('angC_m').value = 44;
+        document.getElementById('angC_s').value = 32;
+
+        document.getElementById('dist_AB').value = '20.000';
+        document.getElementById('dist_BC').value = '20.000';
+        document.getElementById('dist_CQ').value = '26.540';
+
+        document.getElementById('init_X').value = '500.000';
+        document.getElementById('init_Y').value = '100.000';
+
+        document.getElementById('coord_PX').value = '482.793';
+        document.getElementById('coord_PY').value = '98.92';
+
+        calculateAll();
+    }
+
+    // 입력칸 초기화 (0으로 리셋)
+    function resetInputs() {
+        ['angA_d', 'angA_m', 'angA_s', 'angB_d', 'angB_m', 'angB_s', 'angC_d', 'angC_m', 'angC_s'].forEach(id => {
+            document.getElementById(id).value = 0;
+        });
+        document.getElementById('dist_CQ').value = '0.000';
+        document.getElementById('coord_PX').value = '0.000';
+        document.getElementById('coord_PY').value = '0.000';
+        calculateAll();
+    }
+
+    window.addEventListener('resize', calculateAll);
+    window.onload = function () {
+        calculateAll();
+    };
+</script>
+</body>
+</html>
